@@ -1,4 +1,365 @@
-# 자율 주행 군집주행 시스템
+# V2V-based CACC Platooning System Implementation
+
+A small-scale autonomous vehicle platooning system implementing **V2V (Vehicle-to-Vehicle) communication** and **simplified CACC-based cooperative control** using MQTT protocol. This project demonstrates how a leader vehicle broadcasts its speed via V2V communication, and follower vehicles cooperatively perform longitudinal control through onboard distance sensing.
+
+## 📋 Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [System Architecture](#system-architecture)
+- [Hardware Requirements](#hardware-requirements)
+- [Software Requirements](#software-requirements)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Code Structure](#code-structure)
+- [Key Technologies](#key-technologies)
+- [Experimental Setup Summary](#experimental-setup-summary)
+- [Limitations & Future Work](#limitations--future-work)
+
+## 🎯 Overview
+
+### Problem Statement
+
+Maintaining consistent spacing between vehicles in logistics and transportation is challenging. Common issues include:
+- Variable inter-vehicle distances allowing other vehicles to cut in
+- Driver fatigue leading to accidents
+- Rear-end collisions due to reaction delays during sudden braking
+
+### Solution
+
+This project implements a **simplified CACC-based platooning system** where multiple vehicles communicate to form a convoy. The system uses:
+- **V2V Communication**: Wi-Fi based MQTT protocol for real-time speed following
+- **Simplified CACC-based Cooperative Control**: Safe following distance maintenance through leader speed broadcast and follower ultrasonic sensor-based distance correction
+- **Autonomous Lane Following**: Leader vehicle uses OpenCV for lane detection, followers use infrared sensors
+
+### How It Works
+
+The system consists of **3 RC cars**: 1 leader and 2 followers.
+
+- **Leader Vehicle**: 
+  - Uses a camera module to capture lanes and OpenCV for lane detection
+  - Measures actual speed using an encoder sensor
+  - Publishes speed data to MQTT broker
+  
+- **Follower Vehicles**:
+  - Use infrared sensors to stay within lane boundaries
+  - Subscribe to leader's speed via MQTT and set it as base speed
+  - Use ultrasonic sensors to maintain safe distance from the vehicle ahead
+  - Adjust speed (0.7× deceleration when too close, 1.3× acceleration when too far)
+
+**Summary**: Three vehicles autonomously follow lanes while maintaining consistent spacing and speed synchronized through following-based coordination.
+
+## ✨ Features
+
+- **Real-time V2V Communication**: MQTT-based speed following between leader and followers
+- **Lane Detection**: OpenCV-based lane detection using Canny edge detection and Hough transform
+- **Adaptive Speed Control**: Followers adjust speed based on leader's velocity and distance to preceding vehicle
+- **Safe Distance Maintenance**: Ultrasonic sensors ensure minimum safe following distance (target 25cm, tolerance 20-30cm, emergency stop <10cm)
+- **P-based Steering Control**: Proportional control for smooth lane following (`steering = Kp × error`)
+- **Multi-platform Support**: Raspberry Pi 4 (leader) and ESP8266-based WeMos D1 R1 (followers)
+
+## 🏗️ System Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Leader Vehicle                       │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │ Camera   │→ │ Lane Detect  │→ │ P Steering   │      │
+│  │ Module   │  │ (OpenCV)      │  │ Control      │      │
+│  └──────────┘  └──────────────┘  └──────────────┘      │
+│                                                          │
+│  ┌──────────┐  ┌──────────────┐                        │
+│  │ Encoder  │→ │ Speed Calc   │→ MQTT Publish          │
+│  │ Sensor   │  │ (cm/s)        │  (leader/speed)        │
+│  └──────────┘  └──────────────┘                        │
+└─────────────────────────────────────────────────────────┘
+                        │
+                        │ MQTT
+                        ▼
+              ┌──────────────────┐
+              │   MQTT Broker    │
+              │  (Wi-Fi Network) │
+              └──────────────────┘
+                        │
+        ┌───────────────┴───────────────┐
+        │                               │
+        ▼                               ▼
+┌──────────────┐              ┌──────────────┐
+│  Follower 1  │              │  Follower 2  │
+│  (ESP8266)   │              │  (ESP8266)   │
+│              │              │              │
+│ MQTT Subscribe              │ MQTT Subscribe
+│ → Base Speed │              │ → Base Speed │
+│              │              │              │
+│ Ultrasonic   │              │ Ultrasonic   │
+│ → Distance   │              │ → Distance   │
+│              │              │              │
+│ IR Sensors   │              │ IR Sensors   │
+│ → Lane Keep  │              │ → Lane Keep  │
+└──────────────┘              └──────────────┘
+```
+
+## 🔧 Hardware Requirements
+
+### Leader Vehicle
+- **Raspberry Pi 4** (2GB RAM)
+- **Camera Module** (for lane detection)
+- **Encoder Sensor** (for speed measurement)
+- **DC Motors** with motor driver
+- **Battery Pack** (6 batteries recommended)
+
+### Follower Vehicles (2 units)
+- **WeMos D1 R1** (ESP8266-based board)
+- **Ultrasonic Sensor** (HC-SR04) for distance measurement
+- **Infrared Line Tracking Sensors** (2 sensors per vehicle)
+- **DC Motors** with motor driver
+- **Battery Pack** (4-6 batteries)
+- **Reflective Board** (attached to rear for better ultrasonic reflection)
+
+### Common Components
+- Wi-Fi router/access point for MQTT communication
+- MQTT broker (can run on Raspberry Pi or separate device)
+
+## 💻 Software Requirements
+
+### Leader Vehicle (Raspberry Pi)
+- **OS**: Raspberry Pi OS
+- **Python 3.x**
+- **Libraries**:
+  - OpenCV (`opencv-python`)
+  - NumPy
+  - Paho MQTT Client
+  - GPIO Zero
+  - Picamera2
+
+### Follower Vehicles (ESP8266)
+- **Arduino IDE** or **PlatformIO**
+- **Libraries**:
+  - ESP8266WiFi
+  - PubSubClient (MQTT)
+
+### MQTT Broker
+- **Mosquitto** or any MQTT broker
+
+## 📦 Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/yourusername/Autonomous-Platooning-System.git
+cd Autonomous-Platooning-System
+```
+
+### 2. Install Python Dependencies (Leader Vehicle)
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Install MQTT Broker
+
+On Raspberry Pi or a separate device:
+
+```bash
+sudo apt-get update
+sudo apt-get install mosquitto mosquitto-clients
+```
+
+Start the broker:
+```bash
+sudo systemctl start mosquitto
+sudo systemctl enable mosquitto
+```
+
+### 4. Configure ESP8266 Code
+
+1. Open `src/espBlue.cpp` or `src/espWhite.cpp` in Arduino IDE
+2. Install ESP8266 board support:
+   - File → Preferences → Additional Board Manager URLs: `http://arduino.esp8266.com/stable/package_esp8266com_index.json`
+   - Tools → Board → Boards Manager → Search "ESP8266" → Install
+3. Install required libraries:
+   - Sketch → Include Library → Manage Libraries
+   - Search and install: "PubSubClient"
+4. Configure Wi-Fi credentials:
+   ```cpp
+   const char* ssid = "YOUR_WIFI_SSID";
+   const char* password = "YOUR_WIFI_PASSWORD";
+   const char* mqtt_server = "192.168.0.123";  // MQTT broker IP
+   ```
+5. Upload to WeMos D1 R1 board
+
+### 5. Configure Leader Vehicle
+
+1. Edit `src/main.py`:
+   ```python
+   MQTT_BROKER = "localhost"  # or MQTT broker IP
+   ```
+2. Ensure camera is connected and accessible
+3. Connect encoder (example: GPIO pin 23, may vary depending on environment)
+
+## 🚀 Usage
+
+### Starting the System
+
+1. **Start MQTT Broker** (if not running as service):
+   ```bash
+   mosquitto
+   ```
+
+2. **Start Leader Vehicle**:
+   ```bash
+   cd src
+   python main.py
+   ```
+   
+   Controls:
+   - `W`: Increase speed
+   - `S`: Decrease speed
+   - `Space`: Emergency stop
+   - `ESC`: Exit
+
+3. **Follower Vehicles**: Automatically connect to Wi-Fi and MQTT on power-up
+
+### System Operation
+
+- Leader vehicle detects lanes and adjusts steering using P control
+- Speed is calculated from encoder pulses and published to MQTT topic `leader/speed`
+- Followers subscribe to speed updates and convert to PWM values
+- Followers maintain safe distance using ultrasonic sensors (rule-based threshold control):
+  - Target distance: 25cm, Tolerance: 20-30cm (deadband/hysteresis for sensor noise and control stability)
+  - Too close (< 20cm): Decelerate to 70% of base speed
+  - Too far (> 30cm): Accelerate to 130% of base speed
+  - Safe distance (20-30cm): Maintain base speed
+  - *Note: Implemented as rule-based threshold method, not continuous control*
+- Emergency stop if distance < 10cm
+
+## 📁 Code Structure
+
+```
+Autonomous-Platooning-System/
+├── src/
+│   ├── main.py              # Leader vehicle main program
+│   ├── lane_detect.py       # OpenCV lane detection functions
+│   ├── espBlue.cpp          # Follower vehicle 1 code
+│   └── espWhite.cpp         # Follower vehicle 2 code
+├── docs/
+│   └── DETAILS.md           # Detailed algorithm documentation
+├── data/
+│   ├── sampleimage.jpg      # Sample test image
+│   └── sampleroad.mp4       # Sample test video
+├── requirements.txt         # Python dependencies
+└── README.md               # This file
+```
+
+### Key Code Components
+
+#### 1. Lane Detection (`lane_detect.py`)
+- `canny_edge()`: Edge detection using Canny algorithm
+- `apply_roi()`: Region of Interest (trapezoidal) masking
+- `detect_lines_p()`: Hough transform for line detection
+- `average_slope_intercept()`: Calculate average left/right lane lines
+- `draw_lane_center()`: Calculate steering error (distance from lane center to image center)
+
+#### 2. Leader Control (`main.py`)
+- Camera capture and lane detection
+- P-based steering control: `steering = Kp * error` (proportional control only)
+- Speed calculation from encoder pulses
+- MQTT publishing of speed data
+
+#### 3. Follower Control (`espBlue.cpp`, `espWhite.cpp`)
+- MQTT subscription to leader speed
+- Speed mapping: Convert leader speed (cm/s) to PWM values
+- Distance-based ACC: Adjust speed based on ultrasonic sensor readings
+- Line tracking: Use IR sensors to stay within lane boundaries
+
+## 🔑 Key Technologies
+
+### Computer Vision
+- **Canny Edge Detection**: Detects lane boundaries
+- **Hough Transform**: Extracts line segments from edge images
+- **ROI (Region of Interest)**: Focuses processing on road area
+
+### Control Systems
+- **P-based Control**: Proportional control for steering (Kp = 0.01, currently only P term used)
+  - *Note: Document uses Kp notation, while code variable name is KP.*
+- **Simplified CACC-based Algorithm**: Cooperative control through leader speed broadcast and rule-based distance correction
+
+### Communication
+- **V2V Communication**: V2V in this project is implemented as Wi-Fi based MQTT messaging in the experimental environment.
+- **MQTT Protocol**: Lightweight publish-subscribe messaging
+- **Wi-Fi**: TCP/IP-based communication between vehicles
+
+### Sensor Fusion
+- **Camera**: Lane detection (leader)
+- **Encoder**: Speed measurement (leader)
+- **Ultrasonic**: Distance measurement (followers)
+- **Infrared**: Line tracking (followers)
+
+## 📊 Experimental Setup Summary
+
+| Item | Value |
+|---|---|
+| Environment | Indoor test track |
+| Communication | Wi-Fi + MQTT |
+| Target distance | 25 cm |
+| Tolerance (deadband) | 20-30 cm |
+| Emergency stop distance | < 10 cm |
+| Control method | P-based steering + rule-based ACC |
+| Leader platform | Raspberry Pi 4 (2GB) |
+| Follower platform | ESP8266 (WeMos D1 R1) |
+
+## ⚠️ Limitations & Future Work
+
+### Current Limitations
+
+1. **Motor Characteristics**: Low-cost DC motors have dead zones at very low speeds
+   - **Solution**: Increased battery capacity (4→6 batteries) and operated only in stable speed ranges
+
+2. **Hardware Variations**: Different RC car weights and configurations cause speed differences
+   - **Solution**: Individual speed mapping calibration for each vehicle
+
+3. **Wireless Network Dependency**: System relies on Wi-Fi connectivity
+   - **Note**: Acceptable for indoor small-scale implementation; can be replaced with other communication modules for real-world applications
+
+4. **Environment Assumptions**: Designed for straight sections without obstacles
+   - Current implementation assumes controlled indoor environment
+
+### Future Enhancements
+
+1. **ROS 2 Integration**: 
+   - Refactor code into ROS 2 node structure
+   - Improve real-time performance
+   - Enable integration with high-performance sensors (LiDAR, IMU)
+
+2. **Advanced Control**:
+   - Full PID control (currently only P term used)
+   - Model-based control algorithms
+   - Predictive control for smoother following
+   - Continuous control-based CACC implementation (currently rule-based)
+
+3. **V2I (Vehicle-to-Infrastructure)**:
+   - Extend to V2I communication
+   - Integration with traffic lights
+   - Smart city applications
+
+4. **Enhanced Perception**:
+   - LiDAR integration
+   - Multi-sensor fusion
+   - Obstacle detection and avoidance
+
+5. **Algorithm Improvements**:
+   - Curve handling
+   - Lane change capabilities
+   - Multi-lane platooning
+
+---
+
+**Last Updated**: 2026-02-01
+
+----
+----
+
+# V2V기반 CACC 군집주행 시스템
 
 **V2V (차량 간 통신)** 및 **간소화된 CACC 기반 협동 제어**를 MQTT 프로토콜을 사용하여 구현한 소형 자율 주행 군집주행 시스템입니다. 이 프로젝트는 리더 차량의 속도를 V2V 통신으로 브로드캐스트하고, 팔로워 차량들이 온보드 거리 센싱을 통해 협동적으로 종방향 제어를 수행하는 방법을 보여줍니다.
 
